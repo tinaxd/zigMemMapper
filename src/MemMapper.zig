@@ -13,13 +13,16 @@ pub const Options = struct {
     size: usize = 0,
 };
 
+const PAGE_READWRITE: windows.DWORD = 0x04;
+const PAGE_READONLY: windows.DWORD = 0x02;
+
 pub const MemMapper = struct {
-    file: std.fs.File,
+    file: std.Io.File,
     file_mapping: windows.HANDLE,
 
-    pub fn init(file: std.fs.File, writeable: bool) !MemMapper {
+    pub fn init(file: std.Io.File, writeable: bool) !MemMapper {
         if (builtin.os.tag == .windows) {
-            const protection: windows.DWORD = if (writeable) windows.PAGE_READWRITE else windows.PAGE_READONLY;
+            const protection: windows.DWORD = if (writeable) PAGE_READWRITE else PAGE_READONLY;
             const file_mapping = CreateFileMappingA(file.handle, null, protection, 0, 0, null);
             if (file_mapping == null) {
                 return MemMapperError.CouldNotMapFile;
@@ -44,8 +47,8 @@ pub const MemMapper = struct {
         }
     }
 
-    pub fn map(self: *MemMapper, comptime T: type, options: Options) ![]T {
-        const len = if (options.size != 0) options.size else (try self.file.stat()).size;
+    pub fn map(self: *MemMapper, comptime T: type, io: std.Io, options: Options) ![]T {
+        const len = if (options.size != 0) options.size else (try self.file.stat(io)).size;
 
         if (builtin.os.tag == .windows) {
             var access: windows.DWORD = 0;
@@ -90,7 +93,7 @@ const CloseHandle = windows.CloseHandle;
 const testing = std.testing;
 
 test "simple mapping for reading" {
-    const file = try std.fs.cwd().createFile("test.txt", .{
+    const file = try std.Io.Dir.cwd().createFile(std.testing.io, "test.txt", .{
         .read = true,
         .truncate = false,
         .exclusive = false,
@@ -98,7 +101,7 @@ test "simple mapping for reading" {
     var mapper = try MemMapper.init(file, false);
     defer mapper.deinit();
 
-    const tst = try mapper.map(u8, .{});
+    const tst = try mapper.map(u8, std.testing.io, .{});
     defer mapper.unmap(tst);
 
     try testing.expectEqualStrings("This is a Test", tst);
